@@ -1,0 +1,117 @@
+#=======
+#Made by HugoB- 2024/08/19 @8 PM 
+#=======
+
+#The main goal = to do a comparison of window (period) for an asset. The comparison is made of the actual window and all the past windows. In the process I devide the time period 
+#in windows (vectors) and I compute the Euclidian distances beteen these vectors in order to see if there are any similarities. 
+#finally it identifies on a chart the most similar window with the actual window. 
+
+#=====================================
+#=====================================
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from scipy.spatial.distance import euclidean
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from scipy.stats import pearsonr
+
+# Télécharger les données historiques pour un actif financier sur Yahoo Finance
+data = yf.download('ZW=F', start='2013-01-01', end='2024-08-21')
+data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+
+# S'assurer que l'index est de type datetime
+data.index = pd.to_datetime(data.index)
+
+
+# Fonction pour calculer la distance entre deux fenêtres à l'aide la distance Euclidienne 
+def window_distance(window1, window2):
+    window1_flat = window1.values.flatten()
+    window2_flat = window2.values.flatten()
+    return euclidean(window1_flat, window2_flat)
+
+# Définir la taille de la fenêtre
+window_size = 30 #----> j'ai observé empiriquement que la période 30 jours était la plus précise en utilisant la distance Euclidienne 
+
+# Extraire la fenêtre actuelle
+current_window = data.iloc[-window_size:]
+
+# Comparer la fenêtre actuelle avec chaque fenêtre passée
+distances = []
+for i in range(len(data) - window_size):
+    past_window = data.iloc[i:i + window_size]
+    distance = window_distance(current_window, past_window)
+    distances.append((i, distance))
+
+# Trouver la fenêtre passée la plus similaire
+min_distance_index = min(distances, key=lambda x: x[1])[0]
+most_similar_window = data.iloc[min_distance_index:min_distance_index + window_size]
+
+# Calculer le coefficient de corrélation de Pearson pour chaque colonne
+correlations = {}
+for column in ['Close', 'Open', 'High', 'Low', 'Volume']:
+    correlation, _ = pearsonr(current_window[column], most_similar_window[column])
+    correlations[column] = correlation * 100  # Pourcentage de corrélation
+
+# Calculer le pourcentage de ressemblance basé sur la distance
+max_possible_distance = euclidean(
+    np.zeros(window_size * len(data.columns)),
+    np.ones(window_size * len(data.columns)) * data[['Close', 'Open', 'High', 'Low', 'Volume']].max().max()
+)
+similarity_percentage = (1 - (distances[min_distance_index][1] / max_possible_distance)) * 100
+
+# Afficher les résultats
+print(f"Pourcentage de corrélation :")
+for column, percentage in correlations.items():
+    print(f"- {column} : {percentage:.2f}%")
+print(f"Pourcentage de ressemblance basé sur la distance : {similarity_percentage:.2f}%")
+
+# Vérifier les fenêtres pour s'assurer qu'elles sont correctes
+print("Fenêtre actuelle :")
+print(current_window)
+print("Fenêtre passée la plus similaire :")
+print(most_similar_window)
+
+# Visualisation des données brutes pour vérifier leur affichage
+plt.figure(figsize=(14, 7))
+plt.plot(data.index.to_numpy(), data['Close'].values, label='Prix de clôture', alpha=0.5)  # Correction ici
+
+# Ajuster le format de la date sur l'axe x
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+
+plt.legend()
+plt.title('Prix de clôture de CBOT Wheat Chicago')
+plt.xlabel('Date')
+plt.ylabel('Prix de clôture')
+
+# Afficher les dates sur l'axe x
+plt.xticks(rotation=45)
+
+plt.show()
+
+# Visualisation des fenêtres
+plt.figure(figsize=(14, 7))
+plt.plot(data.index.to_numpy(), data['Close'].values, label='Prix de clôture', alpha=0.5)  # Correction ici
+plt.plot(current_window.index.to_numpy(), current_window['Close'].values, color='red', label='Fenêtre actuelle')  # Correction ici
+plt.plot(most_similar_window.index.to_numpy(), most_similar_window['Close'].values, color='green', label='Fenêtre passée similaire')  # Correction ici
+
+# Ajuster les limites de l'axe y pour mieux visualiser les fenêtres
+plt.ylim(min(data['Close'].min(), current_window['Close'].min(), most_similar_window['Close'].min()) - 10, 
+         max(data['Close'].max(), current_window['Close'].max(), most_similar_window['Close'].max()) + 10)
+
+# Ajuster le format de la date sur l'axe x
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+
+# Ajouter des légendes et des titres
+plt.legend()
+plt.title('Comparaison des fenêtres de prix de clôture')
+plt.xlabel('Date')
+plt.ylabel('Prix de clôture')
+
+# Afficher les dates sur l'axe x
+plt.xticks(rotation=45)
+
+plt.show()
