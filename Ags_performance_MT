@@ -1,0 +1,67 @@
+#===========================
+#Created by Hugo.B 2024/08/16
+#===========================
+# This code ranks commodities on their performance and compute SMAs to see wether the tendancy is bullish or bearish on a short term, midterm and long term basis 
+#===========================
+
+#================
+#Représentation graphique pour le MT 
+#================
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+
+# Définir les couleurs pour chaque catégorie MT
+couleurs_MT = {
+    'HP': 'green',        # Couleur pour HP
+    'P': 'yellow',        # Couleur pour P
+    'M': 'gray',          # Couleur pour M
+    'L': 'orange',        # Couleur pour L
+    'VL': 'red'           # Couleur pour VL
+}
+
+# Créer un DataFrame avec un ordre de tri
+ordre_categorie = {'HP': 1, 'P': 2, 'M': 3, 'L': 4, 'VL': 5}
+
+# Préparer les données pour le tracé CT
+data_mt = resultats[['Moyenne MT', 'Categorie_MT']].reset_index()
+data_mt.columns = ['Commo', 'Performance', 'Categorie']
+
+# Ajouter une colonne pour l'ordre de tri
+data_mt['Ordre'] = data_mt['Categorie'].map(ordre_categorie)
+
+# Trier les données par ordre et performance
+data_mt_sorted = data_mt.sort_values(by=['Ordre', 'Performance'], ascending=[True, False])
+
+# Créer le graphique en bâton
+plt.figure(figsize=(14, 8))
+
+# Tracer le graphique avec Seaborn
+sns.barplot(data=data_mt_sorted, x='Commo', y='Performance', hue='Categorie', palette=couleurs_MT, dodge=True)
+
+# Ajouter une ligne horizontale à y=0
+plt.axhline(0, color='black', linestyle='--', linewidth=0.7)
+
+# Réglages du graphique
+plt.xticks(rotation=90)
+plt.title('Performance MT des agri')
+plt.xlabel('Commodités')
+plt.ylabel('Performance (%)')
+plt.legend(title='Catégorie de Performance', loc='upper left')
+plt.tight_layout()
+
+# Nom du dossier et du fichier
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier = 'graphique6.png'
+
+# Créer le dossier si nécessaire
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Enregistrer le graphique
+chemin_complet = os.path.join(chemin_dossier, nom_fichier)
+plt.savefig(chemin_complet, bbox_inches='tight', facecolor='white')
+
+# Afficher le chemin où le fichier a été enregistré
+print(f"Graphique enregistré dans : {chemin_complet}")
+plt.show()
