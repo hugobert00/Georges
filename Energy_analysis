@@ -1,0 +1,191 @@
+#===========================
+#Created by Hugo.B 2024/08/16
+#===========================
+# This code ranks commodities on their performance and compute SMAs to see wether the tendancy is bullish or bearish on a short term, midterm and long term basis 
+#===========================
+
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+from openpyxl import load_workbook
+from openpyxl.styles import Font
+
+# Liste des symboles des actions
+energy = ["WTI", "BZ=F", "CL=F", "HO=F", "NG=F", "RB=F"]
+
+commos = energy
+
+# Périodes pour les rendements
+periodes = {
+    "14 jours": 14,
+    "1 mois": 30,
+    "2 mois": 60,
+    "3 mois": 90,
+    "6 mois": 180,
+    "1 an": 365
+}
+
+# Fonction pour calculer le rendement
+def calculer_rendement(data, jours):
+    if len(data) < jours:
+        return None
+    return (data.iloc[-1] / data.iloc[-jours] - 1) * 100
+
+# Récupérer les données historiques des actions
+def obtenir_donnees(symbol, start_date, end_date):
+    data = yf.download(symbol, start=start_date, end=end_date)
+    return data['Adj Close']
+
+# Définir la date de fin (aujourd'hui) et les dates de début
+date_fin = datetime.now()
+date_debut = date_fin - timedelta(days=max(periodes.values()))
+
+# DataFrame pour stocker les rendements et les moyennes mobiles
+colonnes = list(periodes.keys()) + ['MM_5', 'MM_20', 'MM_50', 'MM_100', 'MM_150']
+resultats = pd.DataFrame(index=commos, columns=colonnes)
+
+# Fonction pour calculer les moyennes mobiles
+def calculer_moyenne_mobile(data, jours):
+    return data.rolling(window=jours).mean()
+
+# Calculer les rendements et les moyennes mobiles pour chaque action
+for commo in commos:
+    donnees = obtenir_donnees(commo, date_debut, date_fin)
+    
+    # Calcul des rendements
+    for periode, jours in periodes.items():
+        rendement = calculer_rendement(donnees, jours)
+        resultats.loc[commo, periode] = rendement
+    
+    # Calcul des moyennes mobiles
+    resultats.loc[commo, 'MM_5'] = calculer_moyenne_mobile(donnees, 5).iloc[-1]
+    resultats.loc[commo, 'MM_20'] = calculer_moyenne_mobile(donnees, 20).iloc[-1]
+    resultats.loc[commo, 'MM_50'] = calculer_moyenne_mobile(donnees, 50).iloc[-1]
+    resultats.loc[commo, 'MM_100'] = calculer_moyenne_mobile(donnees, 100).iloc[-1]
+    resultats.loc[commo, 'MM_150'] = calculer_moyenne_mobile(donnees, 150).iloc[-1]
+
+# Détection des croisements pour CT, MT, et LT
+def detecter_croisement(mm1, mm2, nom1, nom2):
+    if mm1 > mm2:
+        return "Haussier", f"{nom1} > {nom2}"
+    elif mm1 < mm2:
+        return "Baissier", f"{nom2} < {nom1}"
+    else:
+        return "Neutre", f"{nom1} = {nom2}"
+
+# Application des détections de croisements
+def analyser_croisements(row):
+    ct_croisement = detecter_croisement(row['MM_5'], row['MM_20'], 'MM_5', 'MM_20')
+    mt_croisement = detecter_croisement(row['MM_20'], row['MM_50'], 'MM_20', 'MM_50')
+    lt_croisement = detecter_croisement(row['MM_50'], row['MM_100'], 'MM_50', 'MM_100')
+    
+    return pd.Series({
+        'Croisement_CT': ct_croisement[0],
+        'Position_CT': ct_croisement[1],
+        'Croisement_MT': mt_croisement[0],
+        'Position_MT': mt_croisement[1],
+        'Croisement_LT': lt_croisement[0],
+        'Position_LT': lt_croisement[1]
+    })
+
+# Appliquer l'analyse des croisements
+resultats[['Croisement_CT', 'Position_CT', 'Croisement_MT', 'Position_MT', 'Croisement_LT', 'Position_LT']] = resultats.apply(analyser_croisements, axis=1)
+
+# Calculer le classement sur 3 mois (moyenne des rendements sur 1 mois, 2 mois et 3 mois)
+resultats['Moyenne CT'] = resultats[['14 jours', '1 mois', '2 mois', '3 mois']].mean(axis=1)
+resultats['Rang CT'] = resultats['Moyenne CT'].rank(ascending=False)
+
+resultats['Moyenne MT'] = resultats[['2 mois', '3 mois']].mean(axis=1)
+resultats['Rang MT'] = resultats['Moyenne MT'].rank(ascending=False)
+
+# Calculer le classement global (moyenne des rendements sur toutes les périodes)
+resultats['Moyenne LT'] = resultats[['6 mois', '1 an']].mean(axis=1)
+resultats['Rang LT'] = resultats['Moyenne LT'].rank(ascending=False)
+
+# Calculer les quintiles
+resultats['Quintile_CT'] = pd.qcut(resultats['Rang CT'], q=5, labels=False) + 1
+resultats['Quintile_MT'] = pd.qcut(resultats['Rang MT'], q=5, labels=False) + 1
+resultats['Quintile_LT'] = pd.qcut(resultats['Rang LT'], q=5, labels=False) + 1
+
+# Fonction pour déterminer la catégorie basée sur le quintile
+def determiner_categorie(quintile):
+    if quintile == 1:
+        return 'HP'
+    elif quintile == 2:
+        return 'P'
+    elif quintile == 3:
+        return 'M'
+    elif quintile == 4:
+        return 'L'
+    elif quintile == 5:
+        return 'VL'
+
+# Appliquer la fonction pour déterminer la catégorie à chaque action
+resultats['Categorie_CT'] = resultats['Quintile_CT'].apply(determiner_categorie)
+resultats['Categorie_MT'] = resultats['Quintile_MT'].apply(determiner_categorie)
+resultats['Categorie_LT'] = resultats['Quintile_LT'].apply(determiner_categorie)
+
+# Remplacer les symboles par les noms complets dans chaque DataFrame
+resultats_ct = resultats[['Moyenne CT', 'Categorie_CT', 'Croisement_CT', 'Position_CT']]
+resultats_ct.index = resultats_ct.index.map(noms_matiere)
+
+resultats_mt = resultats[['Moyenne MT', 'Categorie_MT', 'Croisement_MT', 'Position_MT']]
+resultats_mt.index = resultats_mt.index.map(noms_matiere)
+
+resultats_lt = resultats[['Moyenne LT', 'Categorie_LT', 'Croisement_LT', 'Position_LT']]
+resultats_lt.index = resultats_lt.index.map(noms_matiere)
+
+# Afficher les résultats avec les noms complets
+print("Classement CT :")
+print(resultats_ct.sort_values(by='Moyenne CT', ascending=False))
+
+print("Classement MT :")
+print(resultats_mt.sort_values(by='Moyenne MT', ascending=False))
+
+print("Classement LT :")
+print(resultats_lt.sort_values(by='Moyenne LT', ascending=False))
+
+
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier_excel = 'resultats_commodities2.xlsx'
+
+# Créer le dossier si nécessaire
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Chemin complet du fichier
+chemin_complet_excel = os.path.join(chemin_dossier, nom_fichier_excel)
+
+# Étape 1: Créer le fichier Excel avec les classements
+with pd.ExcelWriter(chemin_complet_excel) as writer:
+    resultats_ct.sort_values(by='Moyenne CT', ascending=False).to_excel(writer, sheet_name='Tendances Energy CT')
+    resultats_mt.sort_values(by='Moyenne MT', ascending=False).to_excel(writer, sheet_name='Tendances Energy MT')
+    resultats_lt.sort_values(by='Moyenne LT', ascending=False).to_excel(writer, sheet_name='Tendances Energy LT')
+
+# Étape 2: Appliquer la mise en forme conditionnelle avec openpyxl
+# Charger le fichier Excel
+wb = load_workbook(chemin_complet_excel)
+
+# Définir les couleurs et les styles
+font_haussier = Font(color="008000")  # Vert
+font_baissier = Font(color="FF0000")  # Rouge
+
+# Fonction pour appliquer la mise en forme conditionnelle
+def appliquer_mise_en_forme(ws, colonne_croisement):
+    for row in range(2, ws.max_row + 1):
+        cell = ws[f"{colonne_croisement}{row}"]
+        if cell.value == "Haussier":
+            cell.font = font_haussier
+        elif cell.value == "Baissier":
+            cell.font = font_baissier
+
+# Appliquer la mise en forme pour chaque feuille
+for sheet_name in ['Tendances Energy CT', 'Tendances Energy MT', 'Tendances Energy LT']:
+    ws = wb[sheet_name]
+    # Identifier la colonne exacte pour "Croisement"
+    for col in ws.iter_cols(1, ws.max_column):
+        if col[0].value == "Croisement_CT" or col[0].value == "Croisement_MT" or col[0].value == "Croisement_LT":
+            appliquer_mise_en_forme(ws, col[0].column_letter)
+
+# Enregistrer les modifications
+wb.save(chemin_complet_excel)
