@@ -1,0 +1,70 @@
+#===========================
+#Created by Hugo.B 2024/08/16
+#===========================
+# This code ranks commodities on their performance and compute SMAs to see wether the tendancy is bullish or bearish on a short term, midterm and long term basis 
+#===========================
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Définir les listes de symboles pour chaque catégorie
+argicultural = ["ZC=F", "KE=F", "ZR=F", "ZM=F", "ZL=F", "ZS=F", "ZW=F"]
+softs = ["CC=F", "KC=F", "CT=F", "OJ=F", "SB=F"]
+energy = ["WTI", "BZ=F", "CL=F", "HO=F", "NG=F", "RB=F"]
+metals = ["GC=F", "SI=F", "PL=F", "HG=F", "PA=F"]
+
+# Créer une colonne pour la catégorie de matière
+categories = {
+    'argicultural': argicultural,
+    'softs': softs,
+    'energy': energy,
+    'metals': metals
+}
+
+# Ajouter une colonne pour la catégorie dans le DataFrame des résultats
+resultats['Categorie'] = None
+for category, symbols in categories.items():
+    resultats.loc[resultats.index.isin(symbols), 'Categorie'] = category
+
+# Restructurer les données pour le scatter plot
+data_scatter = resultats.reset_index()
+data_scatter = pd.melt(data_scatter, id_vars=['index', 'Categorie'], value_vars=periodes.keys(), var_name='Période', value_name='Rendement')
+data_scatter.columns = ['Commo', 'Categorie', 'Période', 'Rendement']
+
+# Configurer les couleurs pour chaque catégorie de matière
+couleurs_categories = {
+    'argicultural': 'blue',
+    'softs': 'orange',
+    'energy': 'green',
+    'metals': 'red'
+}
+
+# Tracer le scatter plot
+plt.figure(figsize=(14, 8))
+
+sns.scatterplot(data=data_scatter, x='Période', y='Rendement', hue='Categorie', palette=couleurs_categories, s=100, alpha=0.7)
+
+# Ajouter une ligne horizontale à y=0
+plt.axhline(0, color='black', linestyle='--', linewidth=0.7)
+
+plt.title('Dispersion des Rendements par Commodities et Période')
+plt.xlabel('Période')
+plt.ylabel('Rendement (%)')
+plt.legend(title='Catégorie de Matière', loc='upper left')
+plt.xticks(rotation=45)  # Rotation des labels de période pour une meilleure lisibilité
+plt.tight_layout()
+# Nom du dossier et du fichier
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier = 'graphique4.png'
+
+# Créer le dossier si nécessaire
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Enregistrer le graphique
+chemin_complet = os.path.join(chemin_dossier, nom_fichier)
+plt.savefig(chemin_complet, bbox_inches='tight', facecolor='white')
+
+# Afficher le chemin où le fichier a été enregistré
+print(f"Graphique enregistré dans : {chemin_complet}")
+plt.show()
