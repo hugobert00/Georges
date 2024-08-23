@@ -1,0 +1,103 @@
+#===========================
+#Created by Hugo.B 2024/08/21
+#===========================
+#Georges Analyst on commodities price level ---> it rates commodities on a scale from 0 to 100 to visualize the price level on a 52 week basis
+#0 ===> lowest price in the last 52 weeks 
+#100 ===> highest price in the last 52 weeks 
+#===========================
+
+import os
+import yfinance as yf
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Dictionnaire des noms des matières
+noms_matiere = {
+    "ZC=F": "Corn Futures",
+    "KE=F": "KC HRW Wheat Futures",
+    "ZW=F": "SRW Wheat",
+    "ZR=F": "Rough Rice Futures",
+    "ZM=F": "Soybean Meal Futures",
+    "ZL=F": "Soybean Oil Futures",
+    "ZS=F": "Soybean Futures"
+}
+
+def calculate_price_score(ticker):
+    # Télécharge les données pour les 52 dernières semaines
+    stock = yf.Ticker(ticker)
+    data = stock.history(period='1y')
+    
+    # Récupère les prix de clôture
+    prices = data['Close']
+    
+    # Trouve le prix le plus bas et le plus haut
+    min_price = prices.min()
+    max_price = prices.max()
+    
+    # Prix actuel
+    current_price = prices.iloc[-1]
+    
+    # Calcule la position relative du prix actuel
+    position_relative = (current_price - min_price) / (max_price - min_price)
+    
+    # Convertit en score de 0 à 100
+    score = position_relative * 100
+    
+    return score
+
+def calculate_scores_for_panier(tickers):
+    scores = {}
+    for ticker in tickers:
+        try:
+            score = calculate_price_score(ticker)
+            scores[ticker] = score
+        except Exception as e:
+            print(f"Erreur lors du traitement de {ticker}: {e}")
+            scores[ticker] = None
+    return scores
+
+def plot_heatmap(scores, noms, chemin_dossier, nom_fichier):
+    # Conversion des scores en DataFrame
+    df_scores = pd.DataFrame.from_dict(scores, orient='index', columns=['Score'])
+    
+    # Ajout des noms des matières aux labels
+    df_scores = df_scores.T  # Transpose pour mieux visualiser
+    df_scores.columns = [noms.get(col, col) for col in df_scores.columns]
+    
+    # Création de la heatmap
+    plt.figure(figsize=(12, 2))  # Ajuste la taille selon tes besoins
+    sns.heatmap(df_scores, annot=True, cmap="YlGnBu", cbar=True, fmt=".2f", xticklabels=df_scores.columns)
+    
+    # Configuration des axes
+    plt.title('Heatmap des Scores des MP Agris')
+    plt.xlabel('Matières')
+    plt.ylabel('Score')
+    
+    plt.xticks(rotation=45, ha='right')  # Rotation des labels pour meilleure lisibilité
+
+    # Combiner le chemin du dossier et le nom du fichier
+    chemin_complet = os.path.join(chemin_dossier, nom_fichier)
+
+    # Sauvegarder la heatmap en PDF
+    plt.savefig(chemin_complet, format='pdf', bbox_inches='tight', facecolor='white')
+
+    # Afficher la heatmap (optionnel)
+    plt.show()
+
+# Liste des tickers pour le panier
+panier = ["ZC=F", "KE=F", "ZR=F", "ZM=F", "ZL=F", "ZS=F", "ZW=F"]
+
+# Calcul des scores pour chaque actif du panier
+scores = calculate_scores_for_panier(panier)
+
+# Chemin du dossier et nom du fichier
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier = 'graphique15.pdf'
+
+# Créer le dossier s'il n'existe pas
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Affichage de la heatmap avec les noms des matières et enregistrement en PDF
+plot_heatmap(scores, noms_matiere, chemin_dossier, nom_fichier)
