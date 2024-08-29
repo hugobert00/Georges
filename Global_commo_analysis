@@ -1,0 +1,529 @@
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+
+# Liste des symboles des matières
+argicultural = ["ZC=F", "KE=F", "ZR=F", "ZM=F", "ZL=F", "ZS=F", "ZW=F", "ZO=F"]
+softs = ["CC=F", "KC=F", "CT=F", "OJ=F", "SB=F"]
+energy = ["WTI", "BZ=F", "CL=F", "HO=F", "NG=F", "RB=F"]
+metals = ["GC=F", "SI=F", "PL=F", "HG=F", "PA=F"]
+
+commos = argicultural + softs + energy + metals
+
+# Dictionnaire des noms des matières
+noms_matiere = {
+    "GC=F": "Gold",
+    "SI=F": "Silver",
+    "PL=F": "Platinum",
+    "HG=F": "Copper",
+    "PA=F": "Palladium",
+    "CL=F": "Crude Oil",
+    "HO=F": "Heating Oil",
+    "NG=F": "Natural Gas",
+    "RB=F": "RBOB Gasoline",
+    "BZ=F": "Brent Crude Oil",
+    "ZC=F": "Corn Futures",
+    "ZO=F": "Oat Futures",
+    "KE=F": "KC HRW Wheat Futures",
+    "ZW=F": "SRW Wheat",
+    "ZR=F": "Rough Rice Futures",
+    "ZM=F": "Soybean Meal Futures",
+    "ZL=F": "Soybean Oil Futures",
+    "ZS=F": "Soybean Futures",
+    "CC=F": "Cocoa",
+    "KC=F": "Coffee",
+    "CT=F": "Cotton",
+    "OJ=F": "Orange Juice",
+    "SB=F": "Sugar"
+}
+
+# Périodes pour les rendements
+periodes = {
+    "14 jours": 14,
+    "1 mois": 30,
+    "2 mois": 60,
+    "3 mois": 90,
+    "6 mois": 180,
+    "1 an": 365
+}
+
+# Fonction pour calculer le rendement
+def calculer_rendement(data, jours):
+    if len(data) < jours:
+        return None
+    return round((data.iloc[-1] / data.iloc[-jours] - 1) * 100, 2)
+
+# Récupérer les données historiques des actions
+def obtenir_donnees(symbol, start_date, end_date):
+    # Charger les données complètes
+    data = yf.download(symbol, start=start_date, end=end_date)
+    
+    # Ajustement spécifique pour le riz (ZR=F) avant le 23 août 2024
+    if symbol == "ZR=F":
+        date_seuil = datetime(2024, 8, 24)
+        # Appliquer l'ajustement directement sur la colonne 'Adj Close' avant la date seuil
+        data.loc[data.index < date_seuil, 'Adj Close'] /= 100
+    
+    return data['Adj Close']
+
+
+# Définir la date de fin (aujourd'hui) et les dates de début
+date_fin = datetime.now()
+date_debut = date_fin - timedelta(days=max(periodes.values()))
+
+# Ajouter des colonnes pour les moyennes mobiles et l'interprétation
+colonnes = list(periodes.keys()) + ['MM_5', 'MM_20', 'MM_50', 'MM_100',]
+interpretation_colonnes = ['Interpretation_Momentum_CT', 'Interpretation_Momentum_MT', 'Interpretation_Momentum_LT']
+
+# Créer un DataFrame avec les noms des matières
+resultats = pd.DataFrame(index=[noms_matiere.get(commo, commo) for commo in commos], columns=colonnes + interpretation_colonnes)
+
+# Fonction pour calculer les moyennes mobiles
+def calculer_moyenne_mobile(data, jours):
+    return data.rolling(window=jours).mean()
+
+# Fonction pour interpréter les moyennes mobiles
+def interpreter_tendance(mm_courte, mm_longue):
+    if mm_courte > mm_longue:
+        return "Haussier"
+    elif mm_courte < mm_longue:
+        return "Baissier"
+    else:
+        return "Neutre"
+
+# Calculer les rendements, les moyennes mobiles et l'interprétation pour chaque matière
+for commo in commos:
+    donnees = obtenir_donnees(commo, date_debut, date_fin)
+    
+    # Obtenir le nom complet de la matière
+    nom_matiere = noms_matiere.get(commo, commo)
+    
+    # Calcul des rendements
+    for periode, jours in periodes.items():
+        rendement = calculer_rendement(donnees, jours)
+        resultats.loc[nom_matiere, periode] = rendement
+    
+    # Calcul des moyennes mobiles
+    mm_5 = calculer_moyenne_mobile(donnees, 5).iloc[-1]
+    mm_20 = calculer_moyenne_mobile(donnees, 20).iloc[-1]
+    mm_50 = calculer_moyenne_mobile(donnees, 50).iloc[-1]
+    mm_100 = calculer_moyenne_mobile(donnees, 100).iloc[-1]
+    
+    resultats.loc[nom_matiere, 'MM_5'] = mm_5
+    resultats.loc[nom_matiere, 'MM_20'] = mm_20
+    resultats.loc[nom_matiere, 'MM_50'] = mm_50
+    resultats.loc[nom_matiere, 'MM_100'] = mm_100
+    
+    # Interprétation des tendances
+    resultats.loc[nom_matiere, 'Interpretation_Momentum_CT'] = interpreter_tendance(mm_5, mm_20)
+    resultats.loc[nom_matiere, 'Interpretation_Momentum_MT'] = interpreter_tendance(mm_20, mm_50)
+    resultats.loc[nom_matiere, 'Interpretation_Momentum_LT'] = interpreter_tendance(mm_50, mm_100)
+
+#Séparation de dataFrame selon CT, MT et LT 
+# Premier DataFrame avec le rendement sur 14 jours, 1 mois et l'interprétation court terme (CT)
+df_1 = resultats[['14 jours', '1 mois', 'Interpretation_Momentum_CT']]
+
+# Deuxième DataFrame avec le rendement sur 1 mois, 3 mois et l'interprétation moyen terme (MT)
+df_2 = resultats[['1 mois', '3 mois', 'Interpretation_Momentum_MT']]
+
+# Troisième DataFrame avec le rendement sur 3 mois, 6 mois et l'interprétation long terme (LT)
+df_3 = resultats[['3 mois', '6 mois', 'Interpretation_Momentum_LT']]
+
+# Afficher les trois DataFrames
+print("Premier DataFrame:")
+print(df_1)
+
+print("\nDeuxième DataFrame:")
+print(df_2)
+
+print("\nTroisième DataFrame:")
+print(df_3)
+
+#===================================
+#===================================
+#===================================
+#===================================
+#===================================
+
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+# Chemin de sauvegarde
+save_path = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+os.makedirs(save_path, exist_ok=True)
+
+# Fonction pour créer un PDF à partir d'un DataFrame avec coloration conditionnelle
+def dataframe_to_pdf(dataframe, pdf_filename, title):
+    fig, ax = plt.subplots(figsize=(8, len(dataframe) * 0.4 + 1))  # Ajuste la taille en fonction du nombre de lignes
+    ax.axis('tight')
+    ax.axis('off')
+    
+    # Convertir le DataFrame en une image de tableau dans matplotlib
+    table = ax.table(cellText=dataframe.values, colLabels=dataframe.columns, rowLabels=dataframe.index, loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.2)  # Ajuste l'échelle pour mieux remplir la page
+    plt.title(title)
+    
+    # Appliquer les couleurs aux cellules
+    for (i, j), cell in table.get_celld().items():
+        if i == 0 or j == -1:  # Header cells
+            cell.set_text_props(weight='bold', color='black')
+            cell.set_facecolor('#d3d3d3')
+        else:
+            val = dataframe.iat[i-1, j]  # Récupère la valeur de la cellule
+            if val == 'Haussier':
+                cell.set_facecolor('#c6efce')  # Vert clair
+            elif val == 'Baissier':
+                cell.set_facecolor('#ffc7ce')  # Rouge clair
+    
+    # Enregistre le DataFrame sous forme de PDF
+    with PdfPages(pdf_filename) as pdf:
+        pdf.savefig(fig, bbox_inches='tight')
+    plt.close()
+    
+# Créer et enregistrer les PDF dans le chemin spécifié
+dataframe_to_pdf(df_1, os.path.join(save_path, 'rendement_and_trend_CT.pdf'), 'Rendement sur 14 jours, 1 mois et Interprétation CT')
+dataframe_to_pdf(df_2, os.path.join(save_path, 'rendement_and_trend_MT.pdf'), 'Rendement sur 1 mois, 3 mois et Interprétation MT')
+dataframe_to_pdf(df_3, os.path.join(save_path, 'rendement_and_trend_LT.pdf'), 'Rendement sur 3 mois, 6 mois et Interprétation LT')
+
+print("Les PDF ont été créés avec succès avec coloration conditionnelle.")
+
+#===================================
+#===================================
+#===================================
+#===================================
+#===================================
+
+import matplotlib.pyplot as plt
+import os
+
+# Supposons que df_1 est déjà défini et contient les données de rendement pour 14 jours
+
+# Sélectionner les rendements sur 14 jours
+resultats_14_jours = df_1["14 jours"].dropna()  # On ne garde que les lignes avec des données non nulles
+
+# S'assurer que toutes les valeurs sont numériques
+resultats_14_jours = resultats_14_jours.apply(pd.to_numeric, errors='coerce')
+
+# Trier les données pour avoir les meilleurs rendements en haut
+resultats_14_jours = resultats_14_jours.sort_values(ascending=False)
+
+# Création du graphique
+fig, ax = plt.subplots(figsize=(10, 8))
+
+# Définir les couleurs : vert pour les rendements positifs, rouge pour les négatifs
+colors = resultats_14_jours.apply(lambda x: 'green' if x > 0 else 'red')
+
+# Tracer les barres horizontales
+bars = ax.barh(resultats_14_jours.index, resultats_14_jours, color=colors)
+
+# Ajouter des étiquettes de pourcentage à chaque barre
+for bar in bars:
+    width = bar.get_width()
+    label_x_pos = width + (0.5 if width > 0 else -2)  # Ajuster la position de l'étiquette
+    ax.text(label_x_pos, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center', color='black')
+
+# Ajouter des détails au graphique
+ax.set_xlabel('Performance (%)')
+ax.set_title('Performance des matières premières sur 14 jours')
+
+# Ligne verticale à x=0 pour séparer les gains des pertes
+ax.axvline(x=0, color='black', linewidth=0.8)
+
+# Inverser l'axe des y pour que les meilleures performances soient en haut
+ax.invert_yaxis()
+
+# Ajuster l'espacement pour éviter que les étiquettes ne se chevauchent
+plt.tight_layout()
+
+# Nom du dossier et du fichier
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier = 'graphique1.png'
+
+# Créer le dossier si nécessaire
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Enregistrer le graphique
+chemin_complet = os.path.join(chemin_dossier, nom_fichier)
+plt.savefig(chemin_complet, bbox_inches='tight', facecolor='white')
+
+# Afficher le chemin où le fichier a été enregistré
+print(f"Graphique enregistré dans : {chemin_complet}")
+# Afficher le graphique
+plt.show()
+#===================================
+#===================================
+#===================================
+#===================================
+#===================================
+
+import matplotlib.pyplot as plt
+import os
+
+# Supposons que df_1 est déjà défini et contient les données de rendement pour 14 jours
+
+# Sélectionner les rendements sur 14 jours
+resultats_1_mois = df_1["1 mois"].dropna()  # On ne garde que les lignes avec des données non nulles
+
+# S'assurer que toutes les valeurs sont numériques
+resultats_1_mois = resultats_1_mois.apply(pd.to_numeric, errors='coerce')
+
+# Trier les données pour avoir les meilleurs rendements en haut
+resultats_1_mois = resultats_1_mois.sort_values(ascending=False)
+
+# Création du graphique
+fig, ax = plt.subplots(figsize=(10, 8))
+
+# Définir les couleurs : vert pour les rendements positifs, rouge pour les négatifs
+colors = resultats_1_mois.apply(lambda x: 'green' if x > 0 else 'red')
+
+# Tracer les barres horizontales
+bars = ax.barh(resultats_1_mois.index, resultats_1_mois, color=colors)
+
+# Ajouter des étiquettes de pourcentage à chaque barre
+for bar in bars:
+    width = bar.get_width()
+    label_x_pos = width + (0.5 if width > 0 else -2)  # Ajuster la position de l'étiquette
+    ax.text(label_x_pos, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center', color='black')
+
+# Ajouter des détails au graphique
+ax.set_xlabel('Performance (%)')
+ax.set_title('Performance des matières premières sur 1 mois')
+
+# Ligne verticale à x=0 pour séparer les gains des pertes
+ax.axvline(x=0, color='black', linewidth=0.8)
+
+# Inverser l'axe des y pour que les meilleures performances soient en haut
+ax.invert_yaxis()
+
+# Ajuster l'espacement pour éviter que les étiquettes ne se chevauchent
+plt.tight_layout()
+
+# Nom du dossier et du fichier
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier = 'graphique2.png'
+
+# Créer le dossier si nécessaire
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Enregistrer le graphique
+chemin_complet = os.path.join(chemin_dossier, nom_fichier)
+plt.savefig(chemin_complet, bbox_inches='tight', facecolor='white')
+
+# Afficher le chemin où le fichier a été enregistré
+print(f"Graphique enregistré dans : {chemin_complet}")
+# Afficher le graphique
+plt.show()
+#===================================
+#===================================
+#===================================
+#===================================
+#===================================
+
+import matplotlib.pyplot as plt
+import os
+
+
+# Sélectionner les rendements sur 3 mois
+resultats_3_mois = df_2["3 mois"].dropna()  # On ne garde que les lignes avec des données non nulles
+
+# S'assurer que toutes les valeurs sont numériques
+resultats_3_mois = resultats_3_mois.apply(pd.to_numeric, errors='coerce')
+
+# Trier les données pour avoir les meilleurs rendements en haut
+resultats_3_mois = resultats_3_mois.sort_values(ascending=False)
+
+# Création du graphique
+fig, ax = plt.subplots(figsize=(10, 8))
+
+# Définir les couleurs : vert pour les rendements positifs, rouge pour les négatifs
+colors = resultats_3_mois.apply(lambda x: 'green' if x > 0 else 'red')
+
+# Tracer les barres horizontales
+bars = ax.barh(resultats_3_mois.index, resultats_3_mois, color=colors)
+
+# Ajouter des étiquettes de pourcentage à chaque barre
+for bar in bars:
+    width = bar.get_width()
+    label_x_pos = width + (0.5 if width > 0 else -2)  # Ajuster la position de l'étiquette
+    ax.text(label_x_pos, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center', color='black')
+
+# Ajouter des détails au graphique
+ax.set_xlabel('Performance (%)')
+ax.set_title('Performance des matières premières sur 3 mois')
+
+# Ligne verticale à x=0 pour séparer les gains des pertes
+ax.axvline(x=0, color='black', linewidth=0.8)
+
+# Inverser l'axe des y pour que les meilleures performances soient en haut
+ax.invert_yaxis()
+
+# Ajuster l'espacement pour éviter que les étiquettes ne se chevauchent
+plt.tight_layout()
+
+# Nom du dossier et du fichier
+chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+nom_fichier = 'graphique3.png'
+
+# Créer le dossier si nécessaire
+if not os.path.exists(chemin_dossier):
+    os.makedirs(chemin_dossier)
+
+# Enregistrer le graphique
+chemin_complet = os.path.join(chemin_dossier, nom_fichier)
+plt.savefig(chemin_complet, bbox_inches='tight', facecolor='white')
+
+# Afficher le chemin où le fichier a été enregistré
+print(f"Graphique enregistré dans : {chemin_complet}")
+# Afficher le graphique
+plt.show()
+
+#===================================
+#===================================
+#===================================
+#===================================
+#===================================
+
+from PIL import Image
+import os
+
+def png_to_pdf(image_path, pdf_path):
+    """
+    Convertit une image PNG en fichier PDF.
+    
+    :param image_path: Chemin du fichier image PNG à convertir.
+    :param pdf_path: Chemin du fichier PDF de sortie.
+    """
+    try:
+        with Image.open(image_path) as img:
+            img.convert('RGB').save(pdf_path, 'PDF')
+        print(f"Image convertie avec succès : {pdf_path}")
+    except Exception as e:
+        print(f"Erreur lors de la conversion de {image_path} en PDF : {e}")
+
+def convert_all_png_to_pdf(directory, start=1, end=3):
+    """
+    Convertit toutes les images PNG de graphiqueX.png (de start à end) en fichiers PDF.
+    
+    :param directory: Dossier contenant les fichiers PNG.
+    :param start: Numéro de début des fichiers (inclus).
+    :param end: Numéro de fin des fichiers (inclus).
+    """
+    for i in range(start, end + 1):
+        image_filename = f'graphique{i}.png'
+        pdf_filename = f'graphique{i}.pdf'
+        
+        image_path = os.path.join(directory, image_filename)
+        pdf_path = os.path.join(directory, pdf_filename)
+        
+        if os.path.isfile(image_path):
+            png_to_pdf(image_path, pdf_path)
+        else:
+            print(f"Fichier non trouvé : {image_path}")
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    # Définir le chemin du dossier contenant les images PNG
+    chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+    
+    # Convertir toutes les images PNG en fichiers PDF
+    convert_all_png_to_pdf(chemin_dossier)
+
+#===================================
+#===================================
+#===================================
+#===================================
+#===================================
+
+from PyPDF2 import PdfReader, PdfWriter
+import os
+
+def add_page_from_pdf(pdf_writer, pdf_path, page_number):
+    """
+    Ajoute une page spécifique d'un fichier PDF au PdfWriter.
+    
+    :param pdf_writer: PdfWriter pour ajouter la page.
+    :param pdf_path: Chemin vers le fichier PDF source.
+    :param page_number: Numéro de la page à ajouter (1-indexé).
+    """
+    try:
+        if not os.path.isfile(pdf_path):
+            print(f"[Erreur] Fichier non trouvé : {pdf_path}")
+            return
+        
+        pdf_reader = PdfReader(pdf_path)
+        if page_number - 1 >= len(pdf_reader.pages):
+            print(f"[Erreur] Page {page_number} hors limites dans {pdf_path}")
+            return
+        
+        page = pdf_reader.pages[page_number - 1]
+        pdf_writer.add_page(page)
+    except Exception as e:
+        print(f"[Erreur] Problème lors de l'ajout de la page {page_number} de {pdf_path}: {e}")
+
+def merge_pdfs_in_order(output_pdf_path, order_list):
+    """
+    Fusionne les fichiers PDF dans l'ordre spécifié.
+    
+    :param output_pdf_path: Chemin du fichier PDF de sortie.
+    :param order_list: Liste des tuples contenant les fichiers PDF et numéros de pages ou fichiers PDF d'images.
+    """
+    pdf_writer = PdfWriter()
+    
+    for item in order_list:
+        if isinstance(item, tuple):
+            # ('outputX.pdf', page_number)
+            pdf_path, page_number = item
+            full_path = os.path.abspath(pdf_path)
+            print(f"Essayant d'ajouter la page {page_number} de {full_path}")
+            add_page_from_pdf(pdf_writer, full_path, page_number)
+        elif isinstance(item, str) and item.endswith('.pdf'):
+            # Fichier PDF d'image
+            pdf_path = item
+            full_path = os.path.abspath(pdf_path)
+            print(f"Essayant d'ajouter {full_path}")
+            try:
+                if not os.path.isfile(full_path):
+                    print(f"[Erreur] Fichier non trouvé : {full_path}")
+                    continue
+                
+                with open(full_path, 'rb') as file:
+                    pdf_reader = PdfReader(file)
+                    for page in pdf_reader.pages:
+                        pdf_writer.add_page(page)
+            except Exception as e:
+                print(f"[Erreur] Problème lors de l'ajout de {full_path}: {e}")
+    
+    try:
+        with open(output_pdf_path, 'wb') as output_pdf:
+            pdf_writer.write(output_pdf)
+        print(f"PDF fusionné avec succès : {output_pdf_path}")
+    except Exception as e:
+        print(f"[Erreur] Problème lors de l'écriture du fichier de sortie : {output_pdf_path}: {e}")
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+    print("Répertoire de travail actuel :", os.getcwd())
+    print("Répertoire des fichiers :", chemin_dossier)
+    
+    # Liste dans l'ordre spécifié
+    order_list = [
+        os.path.join(chemin_dossier, 'Daily_analysis_trends_commo_cover.pdf'),
+        os.path.join(chemin_dossier, 'rendement_and_trend_CT.pdf'), 
+        os.path.join(chemin_dossier, 'graphique1.pdf'),  
+        os.path.join(chemin_dossier, 'rendement_and_trend_MT.pdf'),  
+        os.path.join(chemin_dossier, 'graphique2.pdf'), 
+        os.path.join(chemin_dossier, 'rendement_and_trend_LT.pdf'), 
+        os.path.join(chemin_dossier, 'graphique3.pdf'),
+        
+    ]
+    
+    chemin_output_pdf = os.path.join(chemin_dossier, 'Tendances_commo_byGeorges.pdf')
+    
+    merge_pdfs_in_order(chemin_output_pdf, order_list)
