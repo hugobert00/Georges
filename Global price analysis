@@ -1,0 +1,194 @@
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from datetime import datetime, timedelta
+from matplotlib.backends.backend_pdf import PdfPages
+import os
+
+# Dictionnaire des noms des matières
+noms_matiere = {
+    "ZC=F": "Corn Futures",
+    "KE=F": "KC HRW Wheat Futures",
+    "ZW=F": "SRW Wheat",
+    "ZR=F": "Rough Rice Futures",
+    "ZM=F": "Soybean Meal Futures",
+    "ZL=F": "Soybean Oil Futures",
+    "ZS=F": "Soybean Futures"
+}
+
+# Liste des tickers
+panier = ["ZC=F", "KE=F", "ZR=F", "ZM=F", "ZL=F", "ZS=F", "ZW=F"]
+
+# Définir les dates de début et de fin
+end_date = datetime.today()
+start_date = end_date - timedelta(days=950)
+
+# Définir le chemin complet pour enregistrer le fichier PDF
+output_directory = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+output_file = os.path.join(output_directory, 'matiere_premieres_analysis.pdf')
+
+# Assurez-vous que le répertoire existe
+os.makedirs(output_directory, exist_ok=True)
+
+# Créer un objet PdfPages pour enregistrer les figures dans un PDF
+with PdfPages(output_file) as pdf:
+    # Fonction pour tracer les moyennes mobiles et identifier les croisements
+    def plot_moving_averages(ticker, name):
+        df = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), interval='1d')
+
+        # Calcul des moyennes mobiles
+        df['SMA50'] = df['Close'].rolling(window=50).mean()
+        df['SMA200'] = df['Close'].rolling(window=200).mean()
+
+        # Identifier les croisements
+        df['Signal'] = np.where(df['SMA50'] > df['SMA200'], 1, 0)  # 1 pour signal haussier
+        df['Position'] = df['Signal'].diff()  # Différence pour identifier les croisements
+
+        # Tracer les cours et les moyennes mobiles
+        plt.figure(figsize=(14, 7))
+        plt.plot(df['Close'], label='Cours', color='black')
+        plt.plot(df['SMA50'], label='SMA 50', color='blue', linestyle='--')
+        plt.plot(df['SMA200'], label='SMA 200', color='red', linestyle='--')
+
+        # Tracer les signaux de croisement avec dates
+        golden_cross_dates = df[df['Position'] == 1].index
+        death_cross_dates = df[df['Position'] == -1].index
+
+        plt.plot(golden_cross_dates, df['SMA50'][df['Position'] == 1], '^', color='green', markersize=12, label='Golden Cross (Haussier)')
+        plt.plot(death_cross_dates, df['SMA50'][df['Position'] == -1], 'v', color='red', markersize=12, label='Death Cross (Baissier)')
+
+        # Ajouter les dates des croisements en légende avec un espacement plus large
+        for date in golden_cross_dates:
+            plt.annotate(date.strftime('%Y-%m-%d'), 
+                         (date, df['SMA50'][date]), 
+                         textcoords="offset points", 
+                         xytext=(0,20),  # Augmenter l'espacement vertical
+                         ha='center', 
+                         fontsize=8, 
+                         color='green')
+        
+        for date in death_cross_dates:
+            plt.annotate(date.strftime('%Y-%m-%d'), 
+                         (date, df['SMA50'][date]), 
+                         textcoords="offset points", 
+                         xytext=(0,-25),  # Augmenter l'espacement vertical
+                         ha='center', 
+                         fontsize=8, 
+                         color='red')
+
+        # Ajouter les étiquettes des dernières valeurs avec un décalage à droite
+        last_close = df['Close'].iloc[-1]
+        last_sma50 = df['SMA50'].iloc[-1]
+        last_sma200 = df['SMA200'].iloc[-1]
+
+        # Ajustement de la position en x pour décaler les étiquettes à droite
+        x_offset = 15  # Ajustez cette valeur pour déplacer les étiquettes plus à droite
+
+        plt.text(df.index[-1] + timedelta(days=x_offset), last_close, f'Close: {last_close:.2f}', 
+                 color='black', fontsize=10, ha='left', va='center', bbox=dict(facecolor='white', alpha=0.5))
+        plt.text(df.index[-1] + timedelta(days=x_offset), last_sma50, f'SMA 50: {last_sma50:.2f}', 
+                 color='blue', fontsize=10, ha='left', va='center', bbox=dict(facecolor='white', alpha=0.5))
+        plt.text(df.index[-1] + timedelta(days=x_offset), last_sma200, f'SMA 200: {last_sma200:.2f}', 
+                 color='red', fontsize=10, ha='left', va='center', bbox=dict(facecolor='white', alpha=0.5))
+
+        plt.title(f"{name} - Cours et Moyennes Mobiles avec Signaux de Croisement")
+        plt.legend()
+
+        # Enregistrer la figure courante dans le PDF
+        pdf.savefig()
+        plt.close()
+
+    # Boucle sur chaque matière première pour générer les graphiques
+    for ticker in panier:
+        plot_moving_averages(ticker, noms_matiere[ticker])
+
+print(f"Les graphiques ont été enregistrés dans le fichier '{output_file}'")
+
+#=================================
+#=================================
+#=================================
+#=================================
+#=================================
+from PyPDF2 import PdfReader, PdfWriter
+import os
+
+def add_page_from_pdf(pdf_writer, pdf_path, page_number):
+    """
+    Ajoute une page spécifique d'un fichier PDF au PdfWriter.
+    
+    :param pdf_writer: PdfWriter pour ajouter la page.
+    :param pdf_path: Chemin vers le fichier PDF source.
+    :param page_number: Numéro de la page à ajouter (1-indexé).
+    """
+    try:
+        if not os.path.isfile(pdf_path):
+            print(f"[Erreur] Fichier non trouvé : {pdf_path}")
+            return
+        
+        pdf_reader = PdfReader(pdf_path)
+        if page_number - 1 >= len(pdf_reader.pages):
+            print(f"[Erreur] Page {page_number} hors limites dans {pdf_path}")
+            return
+        
+        page = pdf_reader.pages[page_number - 1]
+        pdf_writer.add_page(page)
+    except Exception as e:
+        print(f"[Erreur] Problème lors de l'ajout de la page {page_number} de {pdf_path}: {e}")
+
+def merge_pdfs_in_order(output_pdf_path, order_list):
+    """
+    Fusionne les fichiers PDF dans l'ordre spécifié.
+    
+    :param output_pdf_path: Chemin du fichier PDF de sortie.
+    :param order_list: Liste des tuples contenant les fichiers PDF et numéros de pages ou fichiers PDF d'images.
+    """
+    pdf_writer = PdfWriter()
+    
+    for item in order_list:
+        if isinstance(item, tuple):
+            # ('outputX.pdf', page_number)
+            pdf_path, page_number = item
+            full_path = os.path.abspath(pdf_path)
+            print(f"Essayant d'ajouter la page {page_number} de {full_path}")
+            add_page_from_pdf(pdf_writer, full_path, page_number)
+        elif isinstance(item, str) and item.endswith('.pdf'):
+            # Fichier PDF d'image
+            pdf_path = item
+            full_path = os.path.abspath(pdf_path)
+            print(f"Essayant d'ajouter {full_path}")
+            try:
+                if not os.path.isfile(full_path):
+                    print(f"[Erreur] Fichier non trouvé : {full_path}")
+                    continue
+                
+                with open(full_path, 'rb') as file:
+                    pdf_reader = PdfReader(file)
+                    for page in pdf_reader.pages:
+                        pdf_writer.add_page(page)
+            except Exception as e:
+                print(f"[Erreur] Problème lors de l'ajout de {full_path}: {e}")
+    
+    try:
+        with open(output_pdf_path, 'wb') as output_pdf:
+            pdf_writer.write(output_pdf)
+        print(f"PDF fusionné avec succès : {output_pdf_path}")
+    except Exception as e:
+        print(f"[Erreur] Problème lors de l'écriture du fichier de sortie : {output_pdf_path}: {e}")
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+    print("Répertoire de travail actuel :", os.getcwd())
+    print("Répertoire des fichiers :", chemin_dossier)
+    
+    # Liste dans l'ordre spécifié
+    order_list = [
+        os.path.join(chemin_dossier, 'Daily_analysis_SMA.pdf'),
+        os.path.join(chemin_dossier, 'matiere_premieres_analysis.pdf')
+        
+    ]
+    
+    chemin_output_pdf = os.path.join(chemin_dossier, 'SMA_Analysis_commo_byGeorges.pdf')
+    
+    merge_pdfs_in_order(chemin_output_pdf, order_list)
