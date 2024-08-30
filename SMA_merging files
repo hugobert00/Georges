@@ -1,0 +1,82 @@
+from PyPDF2 import PdfReader, PdfWriter
+import os
+
+def add_page_from_pdf(pdf_writer, pdf_path, page_number):
+    """
+    Ajoute une page spécifique d'un fichier PDF au PdfWriter.
+    
+    :param pdf_writer: PdfWriter pour ajouter la page.
+    :param pdf_path: Chemin vers le fichier PDF source.
+    :param page_number: Numéro de la page à ajouter (1-indexé).
+    """
+    try:
+        if not os.path.isfile(pdf_path):
+            print(f"[Erreur] Fichier non trouvé : {pdf_path}")
+            return
+        
+        pdf_reader = PdfReader(pdf_path)
+        if page_number - 1 >= len(pdf_reader.pages):
+            print(f"[Erreur] Page {page_number} hors limites dans {pdf_path}")
+            return
+        
+        page = pdf_reader.pages[page_number - 1]
+        pdf_writer.add_page(page)
+    except Exception as e:
+        print(f"[Erreur] Problème lors de l'ajout de la page {page_number} de {pdf_path}: {e}")
+
+def merge_pdfs_in_order(output_pdf_path, order_list):
+    """
+    Fusionne les fichiers PDF dans l'ordre spécifié.
+    
+    :param output_pdf_path: Chemin du fichier PDF de sortie.
+    :param order_list: Liste des tuples contenant les fichiers PDF et numéros de pages ou fichiers PDF d'images.
+    """
+    pdf_writer = PdfWriter()
+    
+    for item in order_list:
+        if isinstance(item, tuple):
+            # ('outputX.pdf', page_number)
+            pdf_path, page_number = item
+            full_path = os.path.abspath(pdf_path)
+            print(f"Essayant d'ajouter la page {page_number} de {full_path}")
+            add_page_from_pdf(pdf_writer, full_path, page_number)
+        elif isinstance(item, str) and item.endswith('.pdf'):
+            # Fichier PDF d'image
+            pdf_path = item
+            full_path = os.path.abspath(pdf_path)
+            print(f"Essayant d'ajouter {full_path}")
+            try:
+                if not os.path.isfile(full_path):
+                    print(f"[Erreur] Fichier non trouvé : {full_path}")
+                    continue
+                
+                with open(full_path, 'rb') as file:
+                    pdf_reader = PdfReader(file)
+                    for page in pdf_reader.pages:
+                        pdf_writer.add_page(page)
+            except Exception as e:
+                print(f"[Erreur] Problème lors de l'ajout de {full_path}: {e}")
+    
+    try:
+        with open(output_pdf_path, 'wb') as output_pdf:
+            pdf_writer.write(output_pdf)
+        print(f"PDF fusionné avec succès : {output_pdf_path}")
+    except Exception as e:
+        print(f"[Erreur] Problème lors de l'écriture du fichier de sortie : {output_pdf_path}: {e}")
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    chemin_dossier = os.path.expanduser('~/Desktop/Georges_analyst/Commo')
+    print("Répertoire de travail actuel :", os.getcwd())
+    print("Répertoire des fichiers :", chemin_dossier)
+    
+    # Liste dans l'ordre spécifié
+    order_list = [
+        os.path.join(chemin_dossier, 'Daily_analysis_SMA.pdf'),
+        os.path.join(chemin_dossier, 'matiere_premieres_analysis.pdf')
+        
+    ]
+    
+    chemin_output_pdf = os.path.join(chemin_dossier, 'SMA_Analysis_commo_byGeorges.pdf')
+    
+    merge_pdfs_in_order(chemin_output_pdf, order_list)
